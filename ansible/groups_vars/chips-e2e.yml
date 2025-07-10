@@ -1,0 +1,2 @@
+---
+vault_base_path: /applications/heritage-{{ environment_name }}-eu-west-2/chips-e2e

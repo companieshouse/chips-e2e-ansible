@@ -1,0 +1,60 @@
+---
+- name: Get instance ID
+  ansible.builtin.uri:
+    url: http://169.254.169.254/latest/meta-data/instance-id
+    return_content: yes
+  register: instance_id_result
+  changed_when: false
+
+- name: Debug instance ID
+  ansible.builtin.debug:
+    var: instance_id_result.content
+    verbosity: 0
+
+- name: Get instance Region
+  ansible.builtin.uri:
+    url: http://169.254.169.254/latest/meta-data/placement/region
+    return_content: yes
+  register: instance_region_result
+  changed_when: false
+
+- name: Debug instance Region
+  ansible.builtin.debug:
+    var: instance_region_result.content
+    verbosity: 0
+
+- name: Get Environment tag
+  ansible.builtin.command: >
+    aws ec2 describe-instances
+    --instance-ids {{ instance_id_result.content }}
+    --query "Reservations[*].Instances[*].Tags[?Key=='Environment'].Value"
+    --output text
+  register: aws_env
+  changed_when: false
+  environment:
+    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+    AWS_DEFAULT_REGION: "{{ instance_region_result.content }}"
+
+- name: Set vault path for NFS config
+  ansible.builtin.set_fact:
+    nfs_vault_path: "{{ vault_base_path }}/nfs"
+
+- name: Retrieve NFS config from Hashicorp Vault
+  ansible.builtin.set_fact:
+    nfs_vault_config: "{{ lookup('community.hashi_vault.hashi_vault', nfs_vault_path) }}"
+    
+- name: Populate fstab with nfs entries
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ item.mount_point }} {{ item.server }}:{{ item.export_path }} {{ item.options }} 0 0" #?????? Pretty sure this is wrong
+    state: present
+  loop: "{{ nfs_vault_config.mounts }}"
+  
+- name: Mount all NFS
+  ansible.builtin.mount:
+    path: "{{ item.mount_point }}"
+    src: "{{ item.server }}:{{ item.export_path }}" # And this!
+    fstype: nfs
+    opts: "{{ item.options }}"
+    state: mounted
+  loop: "{{ nfs_vault_config.mounts }}"
