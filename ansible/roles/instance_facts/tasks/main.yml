@@ -13,20 +13,33 @@
   register: instance_region_result
   changed_when: false
 
-- name: Get Environment tag
+- name: Get Hostname tag
   ansible.builtin.command: >
     aws ec2 describe-instances
     --instance-ids {{ instance_id_result.content }}
-    --query "Reservations[*].Instances[*].Tags[?Key=='Environment'].Value"
+    --query "Reservations[*].Instances[*].Tags[?Key=='Hostname'].Value"
     --output text
-  register: aws_env
+  register: hostname_tag_result
   changed_when: false
   environment:
     PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
     AWS_DEFAULT_REGION: "{{ instance_region_result.content }}"
 
-- name: Set environment facts
+- name: Get ServiceSubType tag
+  ansible.builtin.command: >
+    aws ec2 describe-instances
+    --instance-ids {{ instance_id_result.content }}
+    --query "Reservations[*].Instances[*].Tags[?Key=='ServiceSubType'].Value"
+    --output text
+  register: service_subtype_result
+  changed_when: false
+  environment:
+    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+    AWS_DEFAULT_REGION: "{{ instance_region_result.content }}"
+
+- name: Set instance facts
   ansible.builtin.set_fact:
-    environment_name: "{{ aws_env.stdout }}"
-    instance_id: "{{ instance_id_result.content }}"
-    instance_region: "{{ instance_region_result.content }}"
+    instance_id: "{{ instance_id_result.content | trim }}"
+    instance_region: "{{ instance_region_result.content | trim }}"
+    desired_hostname: "{{ hostname_tag_result.stdout | trim }}"
+    service_subtype: "{{ service_subtype_result.stdout | trim }}"

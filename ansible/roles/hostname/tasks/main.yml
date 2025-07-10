@@ -1,99 +1,30 @@
 ---
-- name: Get instance ID
-  ansible.builtin.uri:
-    url: http://169.254.169.254/latest/meta-data/instance-id
-    return_content: yes
-  register: instance_id_result
-  changed_when: false
-
-- name: Debug instance ID
+- name: Debug hostname configuration
   ansible.builtin.debug:
-    var: instance_id_result.content
-    verbosity: 0
+    msg: "Setting hostname to: {{ desired_hostname }}"
+  when: desired_hostname != ""
 
-- name: Get instance Region
-  ansible.builtin.uri:
-    url: http://169.254.169.254/latest/meta-data/placement/region
-    return_content: yes
-  register: instance_region_result
-  changed_when: false
-
-- name: Debug instance Region
-  ansible.builtin.debug:
-    var: instance_region_result.content
-    verbosity: 0
-
-- name: Get Hostname tag
-  ansible.builtin.command: >
-    aws ec2 describe-instances
-    --instance-ids {{ instance_id_result.content }}
-    --query "Reservations[*].Instances[*].Tags[?Key=='Hostname'].Value"
-    --output text
-  register: hostname_result
-  changed_when: false
-  environment:
-    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
-    AWS_DEFAULT_REGION: "{{ instance_region_result.content }}"
-
-- name: Debug Hostname tag
-  ansible.builtin.debug:
-    var: hostname_result.stdout
-    verbosity: 0
-
-- name: Get Zone tag
-  ansible.builtin.command: >
-    aws ec2 describe-instances
-    --instance-ids {{ instance_id_result.content }}
-    --query "Reservations[*].Instances[*].Tags[?Key=='Zone'].Value"
-    --output text
-  register: zone_result
-  changed_when: false
-  environment:
-    PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
-    AWS_DEFAULT_REGION: "{{ instance_region_result.content }}"
-
-- name: Debug Zone tag
-  ansible.builtin.debug:
-    var: zone_result.stdout
-    verbosity: 0
-
-- name: Set Hostname and FQDN facts
-  ansible.builtin.set_fact:
-    hostname: "{{ hostname_result.stdout | trim }}"
-    zone: "{{ zone_result.stdout | trim }}"
-    fqdn: "{{ hostname_result.stdout | trim }}.{{ zone_result.stdout | trim }}"
-
-- name: Debug Hostname and FQDN before setting
-  ansible.builtin.debug:
-    msg:
-      - "Hostname: {{ hostname }}"
-      - "Zone: {{ zone }}"
-      - "FQDN: {{ fqdn }}"
-  when: hostname | trim != "" and zone | trim != ""
-
-- name: Set Hostname and FQDN using hostnamectl
-  ansible.builtin.command: hostnamectl set-hostname {{ fqdn }}
-  when: hostname | trim != "" and zone | trim != ""
+- name: Set hostname using hostnamectl
+  ansible.builtin.command: hostnamectl set-hostname {{ desired_hostname }}
+  when: desired_hostname != ""
   changed_when: true
 
-- name: Check short Hostname after change
+- name: Verify short hostname
   ansible.builtin.command: hostname -s
   register: current_hostname
   changed_when: false
 
-- name: Debug current short Hostname
-  ansible.builtin.debug:
-    var: current_hostname.stdout
-
-- name: Get FQDN after change
+- name: Verify FQDN
   ansible.builtin.command: hostname -f
   register: current_fqdn
   changed_when: false
 
-- name: Debug current FQDN
+- name: Debug current hostname configuration
   ansible.builtin.debug:
-    var: current_fqdn.stdout
+    msg:
+      - "Current short hostname: {{ current_hostname.stdout }}"
+      - "Current FQDN: {{ current_fqdn.stdout }}"
 
-- name: Re-gather hostname for ansible facts
+- name: Re-gather hostname facts
   ansible.builtin.setup:
     filter: ansible_hostname

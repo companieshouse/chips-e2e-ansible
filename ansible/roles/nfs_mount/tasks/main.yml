@@ -1,0 +1,94 @@
+---
+- name: Set vault path for NFS configuration
+  ansible.builtin.set_fact:
+    nfs_vault_path: "{{ vault_base_path }}/nfs"
+
+- name: Retrieve NFS config from Hashicorp Vault
+  ansible.builtin.set_fact:
+    nfs_vault_config: "{{ lookup('community.hashi_vault.hashi_vault', nfs_vault_path) }}"
+
+- name: Debug NFS vault configuration
+  ansible.builtin.debug:
+    var: nfs_vault_config
+    verbosity: 1
+
+- name: Check if CVO is present in vault config
+  ansible.builtin.assert:
+    that:
+      - nfs_vault_config.cvo is defined
+      - nfs_vault_config.cvo | trim | length > 0
+    msg: "Missing NFS CVO configuration in Vault at '{{ nfs_vault_path }}'"
+
+- name: Construct NFS mount path
+  ansible.builtin.set_fact:
+    nfs_server: "{{ nfs_vault_config.cvo }}"
+    nfs_export_path: "/e2e_home_{{ service_subtype.split('-')[-1] }}"
+    nfs_mount_point: "/home/ec2-user"
+
+- name: Debug NFS mount configuration
+  ansible.builtin.debug:
+    msg:
+      - "NFS Server: {{ nfs_server }}"
+      - "NFS Export Path: {{ nfs_export_path }}"
+      - "Mount Point: {{ nfs_mount_point }}"
+      - "Service SubType: {{ service_subtype }}"
+
+- name: Ensure mount point directory exists
+  ansible.builtin.file:
+    path: "{{ nfs_mount_point }}"
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: "0755"
+
+- name: Check if NFS mount already exists in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ nfs_server }}:{{ nfs_export_path }}\\s+{{ nfs_mount_point }}"
+    state: absent
+  check_mode: yes
+  register: fstab_check
+  changed_when: false
+
+- name: Add NFS mount to fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ nfs_server }}:{{ nfs_export_path }} {{ nfs_mount_point }} nfs defaults  0 0"
+    backup: yes
+  when: fstab_check.found == 0
+
+- name: Test NFS connectivity
+  ansible.builtin.command: showmount -e {{ nfs_server }}
+  register: showmount_result
+  changed_when: false
+  failed_when: false
+
+- name: Debug NFS exports
+  ansible.builtin.debug:
+    msg: "Available NFS exports: {{ showmount_result.stdout_lines }}"
+  when: showmount_result.rc == 0
+
+- name: Mount NFS filesystem
+  ansible.builtin.mount:
+    path: "{{ nfs_mount_point }}"
+    src: "{{ nfs_server }}:{{ nfs_export_path }}"
+    fstype: nfs
+    opts: defaults
+    state: mounted
+
+- name: Verify NFS mount
+  ansible.builtin.command: df -h {{ nfs_mount_point }}
+  register: mount_verify
+  changed_when: false
+
+- name: Debug mount verification
+  ansible.builtin.debug:
+    msg: "Mount verification: {{ mount_verify.stdout }}"
+
+- name: Ensure correct ownership of mounted directory
+  ansible.builtin.file:
+    path: "{{ nfs_mount_point }}"
+    owner: ec2-user
+    group: ec2-user
+    recurse: no
+  when: mount_verify.rc == 0
