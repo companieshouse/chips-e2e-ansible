@@ -16,4 +16,4 @@
     - role: instance_facts
     - role: hostname
     - role: nfs_mount
-    - role: companieshouse.security.security_scans
+    # - role: companieshouse.security.security_scans
