@@ -1,0 +1,16 @@
+---
+- name: Create oracle_home symlink
+  file:
+    src: /apps/oracle/instantclient_12_2
+    dest: /home/ec2-user/oracle_home
+    state: link
+    owner: ec2-user
+    group: ec2-user
+
+- name: Create ant_home symlink
+  file:
+    src: /usr/local/bin/ant
+    dest: /home/ec2-user/ant_home
+    state: link
+    owner: ec2-user
+    group: ec2-user
