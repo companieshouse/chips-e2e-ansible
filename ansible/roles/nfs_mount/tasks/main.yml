@@ -1,5 +1,5 @@
 ---
-- name: Set vault path for NFS configuration
+- name: Set vault path for NFS
   ansible.builtin.set_fact:
     nfs_vault_path: "{{ vault_base_path }}/nfs"
 
@@ -19,7 +19,7 @@
       - nfs_vault_config.cvo | trim | length > 0
     msg: "Missing NFS CVO configuration in Vault at '{{ nfs_vault_path }}'"
 
-- name: Define NFS mounts configuration
+- name: Define NFS mounts
   ansible.builtin.set_fact:
     nfs_mounts:
       - server: "{{ nfs_vault_config.cvo }}"
@@ -33,7 +33,7 @@
         owner: "ec2-user"
         group: "ec2-user"
 
-- name: Debug NFS mount configuration
+- name: Debug NFS mounts
   ansible.builtin.debug:
     msg:
       - "NFS Server: {{ item.server }}"
