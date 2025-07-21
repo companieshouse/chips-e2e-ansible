@@ -19,46 +19,58 @@
       - nfs_vault_config.cvo | trim | length > 0
     msg: "Missing NFS CVO configuration in Vault at '{{ nfs_vault_path }}'"
 
-- name: Construct NFS mount path
+- name: Define NFS mounts configuration
   ansible.builtin.set_fact:
-    nfs_server: "{{ nfs_vault_config.cvo }}"
-    nfs_export_path: "/e2e_home_{{ service_subtype.split('-')[-1] }}"
-    nfs_mount_point: "/home/ec2-user"
+    nfs_mounts:
+      - server: "{{ nfs_vault_config.cvo }}"
+        export_path: "/e2e_home_{{ service_subtype.split('-')[-1] }}"
+        mount_point: "/home/ec2-user"
+        owner: "ec2-user"
+        group: "ec2-user"
+      - server: "{{ nfs_vault_config.cvo }}"
+        export_path: "/e2e_image_cache"
+        mount_point: "/S3Image"
+        owner: "ec2-user"
+        group: "ec2-user"
 
 - name: Debug NFS mount configuration
   ansible.builtin.debug:
     msg:
-      - "NFS Server: {{ nfs_server }}"
-      - "NFS Export Path: {{ nfs_export_path }}"
-      - "Mount Point: {{ nfs_mount_point }}"
+      - "NFS Server: {{ item.server }}"
+      - "NFS Export Path: {{ item.export_path }}"
+      - "Mount Point: {{ item.mount_point }}"
       - "Service SubType: {{ service_subtype }}"
+  loop: "{{ nfs_mounts }}"
 
-- name: Ensure mount point directory exists
+- name: Ensure mount point directories exist
   ansible.builtin.file:
-    path: "{{ nfs_mount_point }}"
+    path: "{{ item.mount_point }}"
     state: directory
-    owner: ec2-user
-    group: ec2-user
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
     mode: "0755"
+  loop: "{{ nfs_mounts }}"
 
-- name: Check if NFS mount already exists in fstab
+- name: Check if NFS mounts already exist in fstab
   ansible.builtin.lineinfile:
     path: /etc/fstab
-    regexp: "^{{ nfs_server }}:{{ nfs_export_path }}\\s+{{ nfs_mount_point }}"
+    regexp: "^{{ item.server }}:{{ item.export_path }}\\s+{{ item.mount_point }}"
     state: absent
   check_mode: yes
-  register: fstab_check
+  register: fstab_checks
   changed_when: false
+  loop: "{{ nfs_mounts }}"
 
-- name: Add NFS mount to fstab
+- name: Add NFS mounts to fstab
   ansible.builtin.lineinfile:
     path: /etc/fstab
-    line: "{{ nfs_server }}:{{ nfs_export_path }} {{ nfs_mount_point }} nfs defaults  0 0"
+    line: "{{ item.item.server }}:{{ item.item.export_path }} {{ item.item.mount_point }} nfs defaults  0 0"
     backup: yes
-  when: fstab_check.found == 0
+  when: item.found == 0
+  loop: "{{ fstab_checks.results }}"
 
 - name: Test NFS connectivity
-  ansible.builtin.command: showmount -e {{ nfs_server }}
+  ansible.builtin.command: showmount -e {{ nfs_vault_config.cvo }}
   register: showmount_result
   changed_when: false
   failed_when: false
@@ -68,27 +80,31 @@
     msg: "Available NFS exports: {{ showmount_result.stdout_lines }}"
   when: showmount_result.rc == 0
 
-- name: Mount NFS filesystem
+- name: Mount NFS filesystems
   ansible.builtin.mount:
-    path: "{{ nfs_mount_point }}"
-    src: "{{ nfs_server }}:{{ nfs_export_path }}"
+    path: "{{ item.mount_point }}"
+    src: "{{ item.server }}:{{ item.export_path }}"
     fstype: nfs
     opts: defaults
     state: mounted
+  loop: "{{ nfs_mounts }}"
 
-- name: Verify NFS mount
-  ansible.builtin.command: df -h {{ nfs_mount_point }}
-  register: mount_verify
+- name: Verify NFS mounts
+  ansible.builtin.command: df -h {{ item.mount_point }}
+  register: mount_verifications
   changed_when: false
+  loop: "{{ nfs_mounts }}"
 
-- name: Debug mount verification
+- name: Debug mount verifications
   ansible.builtin.debug:
-    msg: "Mount verification: {{ mount_verify.stdout }}"
+    msg: "Mount verification for {{ item.item.mount_point }}: {{ item.stdout }}"
+  loop: "{{ mount_verifications.results }}"
 
-- name: Ensure correct ownership of mounted directory
+- name: Ensure correct ownership of mounted directories
   ansible.builtin.file:
-    path: "{{ nfs_mount_point }}"
-    owner: ec2-user
-    group: ec2-user
+    path: "{{ item.item.mount_point }}"
+    owner: "{{ item.item.owner }}"
+    group: "{{ item.item.group }}"
     recurse: no
-  when: mount_verify.rc == 0
+  when: item.rc == 0
+  loop: "{{ mount_verifications.results }}"
